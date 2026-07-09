@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <h1>发送任务</h1>
+</div>
+
+<div class="card">
+    <table id="tasks-table">
+        <thead>
+            <tr>
+                <th>任务名称</th>
+                <th>主题</th>
+                <th>状态</th>
+                <th>进度</th>
+                <th>成功/失败</th>
+                <th>创建时间</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody id="tasks-list"></tbody>
+    </table>
+    <div id="empty-state" class="empty-state" style="display: none;">
+        <div style="font-size: 48px;">📤</div>
+        <div>暂无发送任务</div>
+    </div>
+</div>
+
+<!-- 任务详情模态框 -->
+<div class="modal" id="detail-modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="modal-header">
+            <h3 id="detail-title">任务详情</h3>
+            <span class="modal-close" onclick="closeModal('detail-modal')">×</span>
+        </div>
+        <div class="modal-body">
+            <div id="task-summary" style="margin-bottom: 20px;"></div>
+            <h4 style="margin-bottom: 10px;">发送日志</h4>
+            <table id="logs-table">
+                <thead>
+                    <tr>
+                        <th>收件人</th>
+                        <th>邮箱</th>
+                        <th>状态</th>
+                        <th>错误信息</th>
+                        <th>发送时间</th>
+                    </tr>
+                </thead>
+                <tbody id="logs-list"></tbody>
+            </table>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('detail-modal')">关闭</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let tasks = [];
+
+async function loadTasks() {
+    tasks = await api('/api/tasks');
+    renderTasks();
+}
+
+function renderTasks() {
+    const tbody = document.getElementById('tasks-list');
+    
+    if (tasks.length === 0) {
+        tbody.innerHTML = '';
+        document.getElementById('empty-state').style.display = 'block';
+        return;
+    }
+    
+    document.getElementById('empty-state').style.display = 'none';
+    tbody.innerHTML = tasks.map(t => {
+        const progress = t.total_count > 0 ? Math.round(t.sent_count / t.total_count * 100) : 0;
+        const statusClass = `status-${t.status}`;
+        
+        return `
+            <tr>
+                <td>${t.name}</td>
+                <td>${t.subject.substring(0, 30)}${t.subject.length > 30 ? '...' : ''}</td>
+                <td><span class="status-badge ${statusClass}">${getStatusText(t.status)}</span></td>
+                <td>
+                    <div class="progress-bar">
+                        <div class="progress" style="width: ${progress}%;"></div>
+                    </div>
+                    <small>${t.sent_count}/${t.total_count}</small>
+                </td>
+                <td>
+                    <span style="color: #27ae60;">${t.success_count}</span> /
+                    <span style="color: #e74c3c;">${t.fail_count}</span>
+                </td>
+                <td>${formatDateTime(t.created_at)}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="showDetail(${t.id})">详情</button>
+                    ${t.status === 'sending' ? `<button class="btn btn-sm btn-danger" onclick="cancelTask(${t.id})">取消</button>` : ''}
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function getStatusText(status) {
+    const map = {
+        'pending': '待发送',
+        'sending': '发送中',
+        'completed': '已完成',
+        'cancelled': '已取消'
+    };
+    return map[status] || status;
+}
+
+async function showDetail(id) {
+    const result = await api(`/api/tasks/${id}`);
+    
+    document.getElementById('detail-title').textContent = result.task.name;
+    document.getElementById('task-summary').innerHTML = `
+        <p><strong>主题：</strong>${result.task.subject}</p>
+        <p><strong>状态：</strong><span class="status-badge status-${result.task.status}">${getStatusText(result.task.status)}</span></p>
+        <p><strong>发送数：</strong>${result.task.sent_count}/${result.task.total_count}</p>
+        <p><strong>成功/失败：</strong><span style="color: #27ae60;">${result.task.success_count}</span> / <span style="color: #e74c3c;">${result.task.fail_count}</span></p>
+        <p><strong>开始时间：</strong>${formatDateTime(result.task.started_at)}</p>
+        <p><strong>完成时间：</strong>${formatDateTime(result.task.completed_at)}</p>
+    `;
+    
+    const tbody = document.getElementById('logs-list');
+    tbody.innerHTML = result.logs.map(l => `
+        <tr>
+            <td>${l.name}</td>
+            <td>${l.email}</td>
+            <td><span class="status-badge status-${l.status}">${l.status === 'success' ? '成功' : '失败'}</span></td>
+            <td>${l.error_message || '-'}</td>
+            <td>${formatDateTime(l.sent_at)}</td>
+        </tr>
+    `).join('');
+    
+    document.getElementById('detail-modal').classList.add('show');
+}
+
+function closeModal(name) {
+    document.getElementById(name).classList.remove('show');
+}
+
+async function cancelTask(id) {
+    if (!confirm('确定要取消此任务吗？')) return;
+    
+    const result = await api(`/api/tasks/${id}/cancel`, 'POST');
+    
+    if (result.success) {
+        showAlert('任务已取消', 'success');
+        loadTasks();
+    } else {
+        showAlert('取消失败: ' + result.error, 'danger');
+    }
+}
+
+// 自动刷新
+setInterval(loadTasks, 5000);
+
+loadTasks();
+</script>
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <h1>邮件批量发送工具</h1>
+</div>
+
+<div class="card">
+    <h3 style="margin-bottom: 20px;">使用步骤</h3>
+    <ol style="line-height: 2; padding-left: 20px;">
+        <li><strong>配置邮箱</strong> - 修改 <code>.env</code> 文件，填写QQ邮箱SMTP授权码</li>
+        <li><strong>导入联系人</strong> - 在"联系人"页面导入CSV/Excel文件</li>
+        <li><strong>创建模板</strong> - 在"模板"页面创建邮件模板，支持变量如 <code>{{姓名}}</code></li>
+        <li><strong>撰写邮件</strong> - 选择收件人和模板，编辑内容</li>
+        <li><strong>发送邮件</strong> - 点击发送，查看进度和结果</li>
+    </ol>
+</div>
+
+<div class="card">
+    <h3 style="margin-bottom: 20px;">快速统计</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+        <div class="card" style="text-align: center; padding: 30px;">
+            <div style="font-size: 36px; color: #3498db;" id="stat-contacts">-</div>
+            <div style="color: #999; margin-top: 10px;">联系人总数</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 30px;">
+            <div style="font-size: 36px; color: #27ae60;" id="stat-templates">-</div>
+            <div style="color: #999; margin-top: 10px;">邮件模板</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 30px;">
+            <div style="font-size: 36px; color: #f39c12;" id="stat-tasks">-</div>
+            <div style="color: #999; margin-top: 10px;">发送任务</div>
+        </div>
+        <div class="card" style="text-align: center; padding: 30px;">
+            <div style="font-size: 36px; color: #e74c3c;" id="stat-sent">-</div>
+            <div style="color: #999; margin-top: 10px;">已发送邮件</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="margin-bottom: 20px;">模板变量说明</h3>
+    <p style="color: #666; line-height: 1.8;">
+        在邮件内容和主题中可以使用以下变量，系统会自动替换为联系人信息：
+    </p>
+    <table style="margin-top: 15px;">
+        <tr>
+            <th>变量</th>
+            <th>说明</th>
+            <th>示例</th>
+        </tr>
+        <tr>
+            <td><code>{{姓名}}</code> 或 <code>{{name}}</code></td>
+            <td>联系人姓名</td>
+            <td>张三</td>
+        </tr>
+        <tr>
+            <td><code>{{公司}}</code> 或 <code>{{company}}</code></td>
+            <td>联系人公司</td>
+            <td>ABC公司</td>
+        </tr>
+        <tr>
+            <td><code>{{邮箱}}</code> 或 <code>{{email}}</code></td>
+            <td>联系人邮箱</td>
+            <td>zhangsan@example.com</td>
+        </tr>
+        <tr>
+            <td><code>{{电话}}</code> 或 <code>{{phone}}</code></td>
+            <td>联系人电话</td>
+            <td>13800138000</td>
+        </tr>
+        <tr>
+            <td><code>{{备注}}</code> 或 <code>{{notes}}</code></td>
+            <td>联系人备注</td>
+            <td>VIP客户</td>
+        </tr>
+    </table>
+</div>
+
+<div class="config-warning" id="config-warning" style="display: none;">
+    <strong>提示：</strong>SMTP邮箱尚未配置，请先修改 <code>.env</code> 文件配置邮箱授权码，否则无法发送邮件。
+    <br><br>
+    <strong>QQ邮箱授权码获取方法：</strong>
+    <ol style="margin-top: 10px; padding-left: 20px;">
+        <li>登录QQ邮箱网页版</li>
+        <li>进入"设置" → "账户"</li>
+        <li>找到"POP3/SMTP服务"，点击"开启"</li>
+        <li>按照提示发送短信验证</li>
+        <li>获得授权码后填入 <code>.env</code> 文件的 <code>SMTP_PASSWORD</code></li>
+    </ol>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadStats() {
+    const contacts = await api('/api/contacts');
+    const templates = await api('/api/templates');
+    const tasks = await api('/api/tasks');
+    const config = await api('/api/config');
+    
+    document.getElementById('stat-contacts').textContent = contacts.length;
+    document.getElementById('stat-templates').textContent = templates.length;
+    document.getElementById('stat-tasks').textContent = tasks.length;
+    
+    let totalSent = 0;
+    tasks.forEach(t => totalSent += t.success_count);
+    document.getElementById('stat-sent').textContent = totalSent;
+    
+    if (!config.configured) {
+        document.getElementById('config-warning').style.display = 'block';
+    }
+}
+
+loadStats();
+</script>
+{% endblock %}

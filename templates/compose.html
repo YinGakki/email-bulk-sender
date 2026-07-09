@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <h1>撰写邮件</h1>
+</div>
+
+<div class="card">
+    <h3 style="margin-bottom: 20px;">选择收件人</h3>
+    <div class="toolbar">
+        <input type="text" id="search-input" placeholder="搜索姓名或邮箱..." style="padding: 10px; width: 250px;" onkeyup="searchContacts()">
+        <button class="btn btn-secondary" onclick="toggleSelectAll()">全选/取消</button>
+    </div>
+    <table id="contacts-table">
+        <thead>
+            <tr>
+                <th><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll()"></th>
+                <th>姓名</th>
+                <th>邮箱</th>
+                <th>公司</th>
+            </tr>
+        </thead>
+        <tbody id="contacts-list"></tbody>
+    </table>
+    <div id="empty-state" class="empty-state" style="display: none;">
+        <div style="font-size: 48px;">📭</div>
+        <div>暂无联系人，请先在"联系人"页面添加</div>
+    </div>
+    <div style="margin-top: 15px; color: #666;">
+        已选择 <strong id="selected-count">0</strong> 个收件人
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="margin-bottom: 20px;">邮件内容</h3>
+    
+    <div class="toolbar">
+        <select id="template-select" onchange="loadTemplate()" style="padding: 10px; min-width: 200px;">
+            <option value="">-- 选择模板 --</option>
+        </select>
+    </div>
+    
+    <div class="form-group">
+        <label>邮件主题</label>
+        <input type="text" id="email-subject" placeholder="可用变量：{{姓名}}、{{公司}} 等">
+    </div>
+    
+    <div class="form-group">
+        <label>邮件内容（HTML格式）</label>
+        <textarea id="email-content" placeholder="支持HTML格式和变量，如：&#10;<p>尊敬的{{姓名}}：</p>&#10;<p>您好！...</p>"></textarea>
+    </div>
+    
+    <button class="btn btn-success" onclick="sendEmails()" style="width: 100%; padding: 15px;">发送邮件</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let contacts = [];
+let templates = [];
+let selectedIds = [];
+
+async function loadData() {
+    contacts = await api('/api/contacts');
+    templates = await api('/api/templates');
+    
+    // 填充模板下拉
+    const select = document.getElementById('template-select');
+    templates.forEach(t => {
+        const option = document.createElement('option');
+        option.value = t.id;
+        option.textContent = t.name;
+        select.appendChild(option);
+    });
+    
+    renderContacts();
+}
+
+function renderContacts(filtered = null) {
+    const list = filtered || contacts;
+    const tbody = document.getElementById('contacts-list');
+    
+    if (list.length === 0) {
+        tbody.innerHTML = '';
+        document.getElementById('empty-state').style.display = 'block';
+        return;
+    }
+    
+    document.getElementById('empty-state').style.display = 'none';
+    tbody.innerHTML = list.map(c => `
+        <tr>
+            <td><input type="checkbox" value="${c.id}" onchange="toggleSelect(${c.id})" ${selectedIds.includes(c.id) ? 'checked' : ''}></td>
+            <td>${c.name}</td>
+            <td>${c.email}</td>
+            <td>${c.company || '-'}</td>
+        </tr>
+    `).join('');
+    
+    updateSelectedCount();
+}
+
+function searchContacts() {
+    const keyword = document.getElementById('search-input').value.toLowerCase();
+    if (!keyword) return renderContacts();
+    
+    const filtered = contacts.filter(c => 
+        c.name.toLowerCase().includes(keyword) || 
+        c.email.toLowerCase().includes(keyword)
+    );
+    renderContacts(filtered);
+}
+
+function toggleSelectAll() {
+    const checkbox = document.getElementById('select-all-checkbox');
+    const keyword = document.getElementById('search-input').value.toLowerCase();
+    const list = keyword ? contacts.filter(c => 
+        c.name.toLowerCase().includes(keyword) || 
+        c.email.toLowerCase().includes(keyword)
+    ) : contacts;
+    
+    if (checkbox.checked) {
+        selectedIds = list.map(c => c.id);
+    } else {
+        selectedIds = [];
+    }
+    renderContacts(keyword ? list : null);
+}
+
+function toggleSelect(id) {
+    if (selectedIds.includes(id)) {
+        selectedIds = selectedIds.filter(i => i !== id);
+    } else {
+        selectedIds.push(id);
+    }
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    document.getElementById('selected-count').textContent = selectedIds.length;
+}
+
+function loadTemplate() {
+    const templateId = parseInt(document.getElementById('template-select').value);
+    if (!templateId) return;
+    
+    const template = templates.find(t => t.id === templateId);
+    if (template) {
+        document.getElementById('email-subject').value = template.subject;
+        document.getElementById('email-content').value = template.content;
+    }
+}
+
+async function sendEmails() {
+    const subject = document.getElementById('email-subject').value.trim();
+    const content = document.getElementById('email-content').value.trim();
+    
+    if (selectedIds.length === 0) {
+        showAlert('请选择收件人', 'danger');
+        return;
+    }
+    
+    if (!subject || !content) {
+        showAlert('主题和内容不能为空', 'danger');
+        return;
+    }
+    
+    if (!confirm(`确定要发送邮件给 ${selectedIds.length} 个收件人吗？`)) return;
+    
+    const result = await api('/api/tasks', 'POST', {
+        contact_ids: selectedIds,
+        subject,
+        content
+    });
+    
+    if (result.success) {
+        showAlert('发送任务已创建，请到"任务"页面查看进度', 'success');
+        setTimeout(() => window.location.href = '/tasks', 2000);
+    } else {
+        showAlert('创建任务失败: ' + result.error, 'danger');
+    }
+}
+
+loadData();
+</script>
+{% endblock %}

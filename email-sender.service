@@ -1,0 +1,15 @@
+[Unit]
+Description=Email Bulk Sender
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/email-sender
+Environment="PATH=/opt/email-sender/venv/bin"
+ExecStart=/opt/email-sender/venv/bin/python app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

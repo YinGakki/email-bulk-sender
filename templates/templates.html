@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <h1>邮件模板管理</h1>
+</div>
+
+<div class="toolbar">
+    <button class="btn btn-primary" onclick="showAddModal()">新建模板</button>
+</div>
+
+<div class="card">
+    <table id="templates-table">
+        <thead>
+            <tr>
+                <th>模板名称</th>
+                <th>邮件主题</th>
+                <th>创建时间</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody id="templates-list"></tbody>
+    </table>
+    <div id="empty-state" class="empty-state" style="display: none;">
+        <div style="font-size: 48px;">📝</div>
+        <div>暂无模板，请创建</div>
+    </div>
+</div>
+
+<!-- 添加模板模态框 -->
+<div class="modal" id="add-modal">
+    <div class="modal-content" style="max-width: 700px;">
+        <div class="modal-header">
+            <h3>新建模板</h3>
+            <span class="modal-close" onclick="closeModal('add-modal')">×</span>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>模板名称</label>
+                <input type="text" id="add-name" placeholder="如：节日问候、产品介绍">
+            </div>
+            <div class="form-group">
+                <label>邮件主题</label>
+                <input type="text" id="add-subject" placeholder="可用变量：{{姓名}}、{{公司}} 等">
+            </div>
+            <div class="form-group">
+                <label>邮件内容（HTML格式）</label>
+                <textarea id="add-content" placeholder="支持HTML格式和变量，如：&#10;<p>尊敬的{{姓名}}：</p>&#10;<p>您好！...</p>"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('add-modal')">取消</button>
+            <button class="btn btn-primary" onclick="addTemplate()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑模板模态框 -->
+<div class="modal" id="edit-modal">
+    <div class="modal-content" style="max-width: 700px;">
+        <div class="modal-header">
+            <h3>编辑模板</h3>
+            <span class="modal-close" onclick="closeModal('edit-modal')">×</span>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="edit-id">
+            <div class="form-group">
+                <label>模板名称</label>
+                <input type="text" id="edit-name">
+            </div>
+            <div class="form-group">
+                <label>邮件主题</label>
+                <input type="text" id="edit-subject">
+            </div>
+            <div class="form-group">
+                <label>邮件内容（HTML格式）</label>
+                <textarea id="edit-content"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-danger" onclick="deleteTemplate()">删除</button>
+            <button class="btn btn-secondary" onclick="closeModal('edit-modal')">取消</button>
+            <button class="btn btn-primary" onclick="updateTemplate()">保存</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let templates = [];
+
+async function loadTemplates() {
+    templates = await api('/api/templates');
+    renderTemplates();
+}
+
+function renderTemplates() {
+    const tbody = document.getElementById('templates-list');
+    
+    if (templates.length === 0) {
+        tbody.innerHTML = '';
+        document.getElementById('empty-state').style.display = 'block';
+        return;
+    }
+    
+    document.getElementById('empty-state').style.display = 'none';
+    tbody.innerHTML = templates.map(t => `
+        <tr>
+            <td>${t.name}</td>
+            <td>${t.subject}</td>
+            <td>${formatDateTime(t.created_at)}</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="showEditModal(${t.id})">编辑</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function showAddModal() {
+    document.getElementById('add-modal').classList.add('show');
+    document.getElementById('add-name').value = '';
+    document.getElementById('add-subject').value = '';
+    document.getElementById('add-content').value = '';
+}
+
+function showEditModal(id) {
+    const template = templates.find(t => t.id === id);
+    if (!template) return;
+    
+    document.getElementById('edit-modal').classList.add('show');
+    document.getElementById('edit-id').value = id;
+    document.getElementById('edit-name').value = template.name;
+    document.getElementById('edit-subject').value = template.subject;
+    document.getElementById('edit-content').value = template.content;
+}
+
+function closeModal(name) {
+    document.getElementById(name).classList.remove('show');
+}
+
+async function addTemplate() {
+    const name = document.getElementById('add-name').value.trim();
+    const subject = document.getElementById('add-subject').value.trim();
+    const content = document.getElementById('add-content').value.trim();
+    
+    if (!name || !subject || !content) {
+        showAlert('所有字段都不能为空', 'danger');
+        return;
+    }
+    
+    const result = await api('/api/templates', 'POST', { name, subject, content });
+    
+    if (result.success) {
+        closeModal('add-modal');
+        showAlert('模板创建成功', 'success');
+        loadTemplates();
+    } else {
+        showAlert('创建失败: ' + result.error, 'danger');
+    }
+}
+
+async function updateTemplate() {
+    const id = parseInt(document.getElementById('edit-id').value);
+    const name = document.getElementById('edit-name').value.trim();
+    const subject = document.getElementById('edit-subject').value.trim();
+    const content = document.getElementById('edit-content').value.trim();
+    
+    if (!name || !subject || !content) {
+        showAlert('所有字段都不能为空', 'danger');
+        return;
+    }
+    
+    const result = await api(`/api/templates/${id}`, 'PUT', { name, subject, content });
+    
+    if (result.success) {
+        closeModal('edit-modal');
+        showAlert('模板更新成功', 'success');
+        loadTemplates();
+    } else {
+        showAlert('更新失败: ' + result.error, 'danger');
+    }
+}
+
+async function deleteTemplate() {
+    const id = parseInt(document.getElementById('edit-id').value);
+    if (!confirm('确定要删除此模板吗？')) return;
+    
+    const result = await api(`/api/templates/${id}`, 'DELETE');
+    
+    if (result.success) {
+        closeModal('edit-modal');
+        showAlert('模板删除成功', 'success');
+        loadTemplates();
+    } else {
+        showAlert('删除失败: ' + result.error, 'danger');
+    }
+}
+
+loadTemplates();
+</script>
+{% endblock %}

@@ -1,0 +1,346 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <h1>联系人管理</h1>
+</div>
+
+<div class="toolbar">
+    <button class="btn btn-primary" onclick="showAddModal()">添加联系人</button>
+    <button class="btn btn-success" onclick="showImportModal()">导入CSV/Excel</button>
+    <button class="btn btn-secondary" onclick="exportContacts()">导出CSV</button>
+    <input type="text" id="search-input" placeholder="搜索姓名或邮箱..." style="padding: 10px; width: 250px;" onkeyup="searchContacts()">
+</div>
+
+<div class="card">
+    <table id="contacts-table">
+        <thead>
+            <tr>
+                <th><input type="checkbox" id="select-all" onchange="toggleSelectAll()"></th>
+                <th>姓名</th>
+                <th>邮箱</th>
+                <th>公司</th>
+                <th>电话</th>
+                <th>标签</th>
+                <th>备注</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody id="contacts-list"></tbody>
+    </table>
+    <div id="empty-state" class="empty-state" style="display: none;">
+        <div style="font-size: 48px;">📭</div>
+        <div>暂无联系人，请添加或导入</div>
+    </div>
+</div>
+
+<!-- 添加联系人模态框 -->
+<div class="modal" id="add-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>添加联系人</h3>
+            <span class="modal-close" onclick="closeModal('add-modal')">×</span>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>姓名 *</label>
+                <input type="text" id="add-name" required>
+            </div>
+            <div class="form-group">
+                <label>邮箱 *</label>
+                <input type="email" id="add-email" required>
+            </div>
+            <div class="form-group">
+                <label>公司</label>
+                <input type="text" id="add-company">
+            </div>
+            <div class="form-group">
+                <label>电话</label>
+                <input type="text" id="add-phone">
+            </div>
+            <div class="form-group">
+                <label>标签</label>
+                <input type="text" id="add-tags" placeholder="多个标签用逗号分隔">
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea id="add-notes" style="min-height: 100px;"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('add-modal')">取消</button>
+            <button class="btn btn-primary" onclick="addContact()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 导入模态框 -->
+<div class="modal" id="import-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>导入联系人</h3>
+            <span class="modal-close" onclick="closeModal('import-modal')">×</span>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info">
+                支持 CSV 和 Excel 文件。文件必须包含"姓名"和"邮箱"列，可选列：公司、电话、标签、备注。
+            </div>
+            <div class="form-group">
+                <label>选择文件</label>
+                <input type="file" id="import-file" accept=".csv,.xlsx,.xls">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('import-modal')">取消</button>
+            <button class="btn btn-success" onclick="importContacts()">导入</button>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑模态框 -->
+<div class="modal" id="edit-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>编辑联系人</h3>
+            <span class="modal-close" onclick="closeModal('edit-modal')">×</span>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="edit-id">
+            <div class="form-group">
+                <label>姓名 *</label>
+                <input type="text" id="edit-name" required>
+            </div>
+            <div class="form-group">
+                <label>邮箱 *</label>
+                <input type="email" id="edit-email" required>
+            </div>
+            <div class="form-group">
+                <label>公司</label>
+                <input type="text" id="edit-company">
+            </div>
+            <div class="form-group">
+                <label>电话</label>
+                <input type="text" id="edit-phone">
+            </div>
+            <div class="form-group">
+                <label>标签</label>
+                <input type="text" id="edit-tags" placeholder="多个标签用逗号分隔">
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea id="edit-notes" style="min-height: 100px;"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-danger" onclick="deleteContact()">删除</button>
+            <button class="btn btn-secondary" onclick="closeModal('edit-modal')">取消</button>
+            <button class="btn btn-primary" onclick="updateContact()">保存</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let contacts = [];
+let selectedIds = [];
+
+async function loadContacts() {
+    contacts = await api('/api/contacts');
+    renderContacts();
+}
+
+function renderContacts(filtered = null) {
+    const list = filtered || contacts;
+    const tbody = document.getElementById('contacts-list');
+    
+    if (list.length === 0) {
+        tbody.innerHTML = '';
+        document.getElementById('empty-state').style.display = 'block';
+        return;
+    }
+    
+    document.getElementById('empty-state').style.display = 'none';
+    tbody.innerHTML = list.map(c => `
+        <tr>
+            <td><input type="checkbox" value="${c.id}" onchange="toggleSelect(${c.id})" ${selectedIds.includes(c.id) ? 'checked' : ''}></td>
+            <td>${c.name}</td>
+            <td>${c.email}</td>
+            <td>${c.company || '-'}</td>
+            <td>${c.phone || '-'}</td>
+            <td>${c.tags || '-'}</td>
+            <td>${c.notes || '-'}</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="showEditModal(${c.id})">编辑</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function searchContacts() {
+    const keyword = document.getElementById('search-input').value.toLowerCase();
+    if (!keyword) return renderContacts();
+    
+    const filtered = contacts.filter(c => 
+        c.name.toLowerCase().includes(keyword) || 
+        c.email.toLowerCase().includes(keyword)
+    );
+    renderContacts(filtered);
+}
+
+function toggleSelectAll() {
+    const selectAll = document.getElementById('select-all').checked;
+    selectedIds = selectAll ? contacts.map(c => c.id) : [];
+    renderContacts();
+}
+
+function toggleSelect(id) {
+    if (selectedIds.includes(id)) {
+        selectedIds = selectedIds.filter(i => i !== id);
+    } else {
+        selectedIds.push(id);
+    }
+}
+
+function showAddModal() {
+    document.getElementById('add-modal').classList.add('show');
+    document.getElementById('add-name').value = '';
+    document.getElementById('add-email').value = '';
+    document.getElementById('add-company').value = '';
+    document.getElementById('add-phone').value = '';
+    document.getElementById('add-tags').value = '';
+    document.getElementById('add-notes').value = '';
+}
+
+function showImportModal() {
+    document.getElementById('import-modal').classList.add('show');
+    document.getElementById('import-file').value = '';
+}
+
+function showEditModal(id) {
+    const contact = contacts.find(c => c.id === id);
+    if (!contact) return;
+    
+    document.getElementById('edit-modal').classList.add('show');
+    document.getElementById('edit-id').value = id;
+    document.getElementById('edit-name').value = contact.name;
+    document.getElementById('edit-email').value = contact.email;
+    document.getElementById('edit-company').value = contact.company;
+    document.getElementById('edit-phone').value = contact.phone;
+    document.getElementById('edit-tags').value = contact.tags;
+    document.getElementById('edit-notes').value = contact.notes;
+}
+
+function closeModal(name) {
+    document.getElementById(name).classList.remove('show');
+}
+
+async function addContact() {
+    const name = document.getElementById('add-name').value.trim();
+    const email = document.getElementById('add-email').value.trim();
+    
+    if (!name || !email) {
+        showAlert('姓名和邮箱不能为空', 'danger');
+        return;
+    }
+    
+    const result = await api('/api/contacts', 'POST', {
+        name,
+        email,
+        company: document.getElementById('add-company').value.trim(),
+        phone: document.getElementById('add-phone').value.trim(),
+        tags: document.getElementById('add-tags').value.trim(),
+        notes: document.getElementById('add-notes').value.trim()
+    });
+    
+    if (result.success) {
+        closeModal('add-modal');
+        showAlert('添加成功', 'success');
+        loadContacts();
+    } else {
+        showAlert('添加失败: ' + result.error, 'danger');
+    }
+}
+
+async function importContacts() {
+    const file = document.getElementById('import-file').files[0];
+    if (!file) {
+        showAlert('请选择文件', 'danger');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    showLoading();
+    try {
+        const response = await fetch('/api/contacts/import', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        hideLoading();
+        
+        if (result.success) {
+            closeModal('import-modal');
+            showAlert(`导入成功！新增 ${result.imported} 条，跳过 ${result.skipped} 条`, 'success');
+            loadContacts();
+        } else {
+            showAlert('导入失败: ' + result.error, 'danger');
+        }
+    } catch (error) {
+        hideLoading();
+        showAlert('导入失败: ' + error.message, 'danger');
+    }
+}
+
+async function exportContacts() {
+    window.location.href = '/api/contacts/export';
+}
+
+async function updateContact() {
+    const id = parseInt(document.getElementById('edit-id').value);
+    const name = document.getElementById('edit-name').value.trim();
+    const email = document.getElementById('edit-email').value.trim();
+    
+    if (!name || !email) {
+        showAlert('姓名和邮箱不能为空', 'danger');
+        return;
+    }
+    
+    const result = await api(`/api/contacts/${id}`, 'PUT', {
+        name,
+        email,
+        company: document.getElementById('edit-company').value.trim(),
+        phone: document.getElementById('edit-phone').value.trim(),
+        tags: document.getElementById('edit-tags').value.trim(),
+        notes: document.getElementById('edit-notes').value.trim()
+    });
+    
+    if (result.success) {
+        closeModal('edit-modal');
+        showAlert('更新成功', 'success');
+        loadContacts();
+    } else {
+        showAlert('更新失败: ' + result.error, 'danger');
+    }
+}
+
+async function deleteContact() {
+    const id = parseInt(document.getElementById('edit-id').value);
+    if (!confirm('确定要删除此联系人吗？')) return;
+    
+    const result = await api(`/api/contacts/${id}`, 'DELETE');
+    
+    if (result.success) {
+        closeModal('edit-modal');
+        showAlert('删除成功', 'success');
+        loadContacts();
+    } else {
+        showAlert('删除失败: ' + result.error, 'danger');
+    }
+}
+
+loadContacts();
+</script>
+{% endblock %}
