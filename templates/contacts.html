@@ -28,6 +28,7 @@
         </thead>
         <tbody id="contacts-list"></tbody>
     </table>
+    <div class="contact-list" id="contact-list-mobile"></div>
     <div id="empty-state" class="empty-state" style="display: none;">
         <div style="font-size: 48px;">📭</div>
         <div>暂无联系人，请添加或导入</div>
@@ -153,14 +154,17 @@ async function loadContacts() {
 function renderContacts(filtered = null) {
     const list = filtered || contacts;
     const tbody = document.getElementById('contacts-list');
-    
+    const mobileList = document.getElementById('contact-list-mobile');
+
     if (list.length === 0) {
         tbody.innerHTML = '';
+        mobileList.innerHTML = '';
         document.getElementById('empty-state').style.display = 'block';
         return;
     }
-    
+
     document.getElementById('empty-state').style.display = 'none';
+
     tbody.innerHTML = list.map(c => `
         <tr>
             <td><input type="checkbox" value="${c.id}" onchange="toggleSelect(${c.id})" ${selectedIds.includes(c.id) ? 'checked' : ''}></td>
@@ -174,6 +178,25 @@ function renderContacts(filtered = null) {
                 <button class="btn btn-sm btn-primary" onclick="showEditModal(${c.id})">编辑</button>
             </td>
         </tr>
+    `).join('');
+
+    mobileList.innerHTML = list.map(c => `
+        <div class="contact-item">
+            <div style="padding-top: 3px;">
+                <input type="checkbox" value="${c.id}" onchange="toggleSelect(${c.id})" ${selectedIds.includes(c.id) ? 'checked' : ''}>
+            </div>
+            <div class="contact-info">
+                <div class="name">${c.name}</div>
+                <div class="email">${c.email}</div>
+                <div class="extra">
+                    ${c.company ? '公司：' + c.company + '　' : ''}
+                    ${c.phone ? '电话：' + c.phone : ''}
+                </div>
+            </div>
+            <div class="contact-actions">
+                <button class="btn btn-sm btn-primary" onclick="showEditModal(${c.id})">编辑</button>
+            </div>
+        </div>
     `).join('');
 }
 
@@ -190,7 +213,12 @@ function searchContacts() {
 
 function toggleSelectAll() {
     const selectAll = document.getElementById('select-all').checked;
-    selectedIds = selectAll ? contacts.map(c => c.id) : [];
+    const keyword = document.getElementById('search-input').value.toLowerCase();
+    const list = keyword ? contacts.filter(c =>
+        c.name.toLowerCase().includes(keyword) ||
+        c.email.toLowerCase().includes(keyword)
+    ) : contacts;
+    selectedIds = selectAll ? list.map(c => c.id) : [];
     renderContacts();
 }
 

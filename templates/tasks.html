@@ -20,6 +20,7 @@
         </thead>
         <tbody id="tasks-list"></tbody>
     </table>
+    <div class="contact-list" id="tasks-list-mobile"></div>
     <div id="empty-state" class="empty-state" style="display: none;">
         <div style="font-size: 48px;">📤</div>
         <div>暂无发送任务</div>
@@ -48,6 +49,7 @@
                 </thead>
                 <tbody id="logs-list"></tbody>
             </table>
+            <div class="contact-list" id="logs-list-mobile"></div>
         </div>
         <div class="modal-footer">
             <button class="btn btn-secondary" onclick="closeModal('detail-modal')">关闭</button>
@@ -67,18 +69,21 @@ async function loadTasks() {
 
 function renderTasks() {
     const tbody = document.getElementById('tasks-list');
-    
+    const mobileList = document.getElementById('tasks-list-mobile');
+
     if (tasks.length === 0) {
         tbody.innerHTML = '';
+        mobileList.innerHTML = '';
         document.getElementById('empty-state').style.display = 'block';
         return;
     }
-    
+
     document.getElementById('empty-state').style.display = 'none';
+
     tbody.innerHTML = tasks.map(t => {
         const progress = t.total_count > 0 ? Math.round(t.sent_count / t.total_count * 100) : 0;
         const statusClass = `status-${t.status}`;
-        
+
         return `
             <tr>
                 <td>${t.name}</td>
@@ -100,6 +105,34 @@ function renderTasks() {
                     ${t.status === 'sending' ? `<button class="btn btn-sm btn-danger" onclick="cancelTask(${t.id})">取消</button>` : ''}
                 </td>
             </tr>
+        `;
+    }).join('');
+
+    mobileList.innerHTML = tasks.map(t => {
+        const progress = t.total_count > 0 ? Math.round(t.sent_count / t.total_count * 100) : 0;
+        const statusClass = `status-${t.status}`;
+
+        return `
+            <div class="contact-item">
+                <div class="contact-info">
+                    <div class="name">${t.name}</div>
+                    <div class="email" style="margin-bottom: 8px;">${t.subject}</div>
+                    <div style="margin-bottom: 8px;">
+                        <span class="status-badge ${statusClass}">${getStatusText(t.status)}</span>
+                        <span style="color: #999; margin-left: 8px; font-size: 12px;">${formatDateTime(t.created_at)}</span>
+                    </div>
+                    <div class="progress-bar" style="margin-bottom: 4px;">
+                        <div class="progress" style="width: ${progress}%;"></div>
+                    </div>
+                    <div class="extra">
+                        已发送 ${t.sent_count}/${t.total_count}　成功 <span style="color: #27ae60;">${t.success_count}</span> / 失败 <span style="color: #e74c3c;">${t.fail_count}</span>
+                    </div>
+                </div>
+                <div class="contact-actions" style="flex-direction: column;">
+                    <button class="btn btn-sm btn-primary" onclick="showDetail(${t.id})">详情</button>
+                    ${t.status === 'sending' ? `<button class="btn btn-sm btn-danger" onclick="cancelTask(${t.id})">取消</button>` : ''}
+                </div>
+            </div>
         `;
     }).join('');
 }
@@ -137,7 +170,22 @@ async function showDetail(id) {
             <td>${formatDateTime(l.sent_at)}</td>
         </tr>
     `).join('');
-    
+
+    const mobileLogs = document.getElementById('logs-list-mobile');
+    mobileLogs.innerHTML = result.logs.map(l => `
+        <div class="contact-item">
+            <div class="contact-info">
+                <div class="name">${l.name}</div>
+                <div class="email">${l.email}</div>
+                <div class="extra">
+                    <span class="status-badge status-${l.status}">${l.status === 'success' ? '成功' : '失败'}</span>
+                    <span style="margin-left: 8px;">${formatDateTime(l.sent_at)}</span>
+                </div>
+                ${l.error_message ? `<div class="extra" style="color: #e74c3c; margin-top: 4px;">${l.error_message}</div>` : ''}
+            </div>
+        </div>
+    `).join('');
+
     document.getElementById('detail-modal').classList.add('show');
 }
 

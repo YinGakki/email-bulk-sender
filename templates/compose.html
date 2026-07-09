@@ -22,6 +22,7 @@
         </thead>
         <tbody id="contacts-list"></tbody>
     </table>
+    <div class="contact-list" id="contact-list-mobile"></div>
     <div id="empty-state" class="empty-state" style="display: none;">
         <div style="font-size: 48px;">📭</div>
         <div>暂无联系人，请先在"联系人"页面添加</div>
@@ -79,14 +80,17 @@ async function loadData() {
 function renderContacts(filtered = null) {
     const list = filtered || contacts;
     const tbody = document.getElementById('contacts-list');
-    
+    const mobileList = document.getElementById('contact-list-mobile');
+
     if (list.length === 0) {
         tbody.innerHTML = '';
+        mobileList.innerHTML = '';
         document.getElementById('empty-state').style.display = 'block';
         return;
     }
-    
+
     document.getElementById('empty-state').style.display = 'none';
+
     tbody.innerHTML = list.map(c => `
         <tr>
             <td><input type="checkbox" value="${c.id}" onchange="toggleSelect(${c.id})" ${selectedIds.includes(c.id) ? 'checked' : ''}></td>
@@ -95,7 +99,20 @@ function renderContacts(filtered = null) {
             <td>${c.company || '-'}</td>
         </tr>
     `).join('');
-    
+
+    mobileList.innerHTML = list.map(c => `
+        <div class="contact-item">
+            <div style="padding-top: 3px;">
+                <input type="checkbox" value="${c.id}" onchange="toggleSelect(${c.id})" ${selectedIds.includes(c.id) ? 'checked' : ''}>
+            </div>
+            <div class="contact-info">
+                <div class="name">${c.name}</div>
+                <div class="email">${c.email}</div>
+                <div class="extra">${c.company ? '公司：' + c.company : ''}</div>
+            </div>
+        </div>
+    `).join('');
+
     updateSelectedCount();
 }
 

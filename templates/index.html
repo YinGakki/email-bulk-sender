@@ -17,30 +17,30 @@
 </div>
 
 <div class="card">
-    <h3 style="margin-bottom: 20px;">快速统计</h3>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
-        <div class="card" style="text-align: center; padding: 30px;">
-            <div style="font-size: 36px; color: #3498db;" id="stat-contacts">-</div>
-            <div style="color: #999; margin-top: 10px;">联系人总数</div>
+    <h3 style="margin-bottom: 16px;">快速统计</h3>
+    <div class="stat-grid">
+        <div class="card" style="text-align: center; padding: 20px 10px;">
+            <div style="font-size: 32px; color: #3498db;" id="stat-contacts">-</div>
+            <div style="color: #999; margin-top: 6px; font-size: 13px;">联系人总数</div>
         </div>
-        <div class="card" style="text-align: center; padding: 30px;">
-            <div style="font-size: 36px; color: #27ae60;" id="stat-templates">-</div>
-            <div style="color: #999; margin-top: 10px;">邮件模板</div>
+        <div class="card" style="text-align: center; padding: 20px 10px;">
+            <div style="font-size: 32px; color: #27ae60;" id="stat-templates">-</div>
+            <div style="color: #999; margin-top: 6px; font-size: 13px;">邮件模板</div>
         </div>
-        <div class="card" style="text-align: center; padding: 30px;">
-            <div style="font-size: 36px; color: #f39c12;" id="stat-tasks">-</div>
-            <div style="color: #999; margin-top: 10px;">发送任务</div>
+        <div class="card" style="text-align: center; padding: 20px 10px;">
+            <div style="font-size: 32px; color: #f39c12;" id="stat-tasks">-</div>
+            <div style="color: #999; margin-top: 6px; font-size: 13px;">发送任务</div>
         </div>
-        <div class="card" style="text-align: center; padding: 30px;">
-            <div style="font-size: 36px; color: #e74c3c;" id="stat-sent">-</div>
-            <div style="color: #999; margin-top: 10px;">已发送邮件</div>
+        <div class="card" style="text-align: center; padding: 20px 10px;">
+            <div style="font-size: 32px; color: #e74c3c;" id="stat-sent">-</div>
+            <div style="color: #999; margin-top: 6px; font-size: 13px;">已发送邮件</div>
         </div>
     </div>
 </div>
 
 <div class="card">
-    <h3 style="margin-bottom: 20px;">模板变量说明</h3>
-    <p style="color: #666; line-height: 1.8;">
+    <h3 style="margin-bottom: 16px;">模板变量说明</h3>
+    <p style="color: #666; line-height: 1.8; font-size: 14px;">
         在邮件内容和主题中可以使用以下变量，系统会自动替换为联系人信息：
     </p>
     <table style="margin-top: 15px;">
@@ -75,6 +75,7 @@
             <td>VIP客户</td>
         </tr>
     </table>
+    <div class="contact-list" id="var-list-mobile" style="margin-top: 15px;"></div>
 </div>
 
 <div class="config-warning" id="config-warning" style="display: none;">
@@ -113,5 +114,22 @@ async function loadStats() {
 }
 
 loadStats();
+
+const vars = [
+    { v: '{{姓名}} / {{name}}', d: '联系人姓名', e: '张三' },
+    { v: '{{公司}} / {{company}}', d: '联系人公司', e: 'ABC公司' },
+    { v: '{{邮箱}} / {{email}}', d: '联系人邮箱', e: 'zhangsan@example.com' },
+    { v: '{{电话}} / {{phone}}', d: '联系人电话', e: '13800138000' },
+    { v: '{{备注}} / {{notes}}', d: '联系人备注', e: 'VIP客户' }
+];
+document.getElementById('var-list-mobile').innerHTML = vars.map(v => `
+    <div class="contact-item">
+        <div class="contact-info">
+            <div class="name"><code>${v.v}</code></div>
+            <div class="email">${v.d}</div>
+            <div class="extra">示例：${v.e}</div>
+        </div>
+    </div>
+`).join('');
 </script>
 {% endblock %}

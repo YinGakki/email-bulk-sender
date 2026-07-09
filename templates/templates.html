@@ -21,6 +21,7 @@
         </thead>
         <tbody id="templates-list"></tbody>
     </table>
+    <div class="contact-list" id="templates-list-mobile"></div>
     <div id="empty-state" class="empty-state" style="display: none;">
         <div style="font-size: 48px;">📝</div>
         <div>暂无模板，请创建</div>
@@ -97,14 +98,17 @@ async function loadTemplates() {
 
 function renderTemplates() {
     const tbody = document.getElementById('templates-list');
-    
+    const mobileList = document.getElementById('templates-list-mobile');
+
     if (templates.length === 0) {
         tbody.innerHTML = '';
+        mobileList.innerHTML = '';
         document.getElementById('empty-state').style.display = 'block';
         return;
     }
-    
+
     document.getElementById('empty-state').style.display = 'none';
+
     tbody.innerHTML = templates.map(t => `
         <tr>
             <td>${t.name}</td>
@@ -114,6 +118,19 @@ function renderTemplates() {
                 <button class="btn btn-sm btn-primary" onclick="showEditModal(${t.id})">编辑</button>
             </td>
         </tr>
+    `).join('');
+
+    mobileList.innerHTML = templates.map(t => `
+        <div class="contact-item">
+            <div class="contact-info">
+                <div class="name">${t.name}</div>
+                <div class="email">${t.subject}</div>
+                <div class="extra">${formatDateTime(t.created_at)}</div>
+            </div>
+            <div class="contact-actions">
+                <button class="btn btn-sm btn-primary" onclick="showEditModal(${t.id})">编辑</button>
+            </div>
+        </div>
     `).join('');
 }
 
