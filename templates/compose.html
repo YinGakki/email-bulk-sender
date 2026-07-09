@@ -50,7 +50,29 @@
         <label>邮件内容（HTML格式）</label>
         <textarea id="email-content" placeholder="支持HTML格式和变量，如：&#10;<p>尊敬的{{姓名}}：</p>&#10;<p>您好！...</p>"></textarea>
     </div>
-    
+
+    <div class="form-group">
+        <label>附件</label>
+        <input type="file" id="email-attachments" multiple onchange="updateAttachmentList()">
+        <div id="attachment-list" style="margin-top: 8px; font-size: 13px; color: #666;"></div>
+    </div>
+
+    <div class="form-group">
+        <label>发送方式</label>
+        <div class="checkbox-group" style="margin-bottom: 8px;">
+            <input type="radio" name="send-mode" id="send-separately" value="true" checked>
+            <label for="send-separately" style="display: inline; margin-bottom: 0; font-weight: normal;">
+                <strong>分别发送</strong> — 每位收件人单独收到一封邮件，互不可见（推荐）
+            </label>
+        </div>
+        <div class="checkbox-group">
+            <input type="radio" name="send-mode" id="send-group" value="false">
+            <label for="send-group" style="display: inline; margin-bottom: 0; font-weight: normal;">
+                <strong>群发</strong> — 一封邮件同时发送给所有收件人
+            </label>
+        </div>
+    </div>
+
     <button class="btn btn-success" onclick="sendEmails()" style="width: 100%; padding: 15px;">发送邮件</button>
 </div>
 {% endblock %}
@@ -167,33 +189,72 @@ function loadTemplate() {
     }
 }
 
+function updateAttachmentList() {
+    const input = document.getElementById('email-attachments');
+    const list = document.getElementById('attachment-list');
+    if (input.files.length === 0) {
+        list.innerHTML = '';
+        return;
+    }
+    const files = Array.from(input.files);
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    list.innerHTML = files.map(f => `📎 ${f.name} (${formatFileSize(f.size)})`).join('<br>') +
+        `<br><small>共 ${files.length} 个文件，总计 ${formatFileSize(totalSize)}</small>`;
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
 async function sendEmails() {
     const subject = document.getElementById('email-subject').value.trim();
     const content = document.getElementById('email-content').value.trim();
-    
+    const sendSeparately = document.querySelector('input[name="send-mode"]:checked').value === 'true';
+    const fileInput = document.getElementById('email-attachments');
+
     if (selectedIds.length === 0) {
         showAlert('请选择收件人', 'danger');
         return;
     }
-    
+
     if (!subject || !content) {
         showAlert('主题和内容不能为空', 'danger');
         return;
     }
-    
-    if (!confirm(`确定要发送邮件给 ${selectedIds.length} 个收件人吗？`)) return;
-    
-    const result = await api('/api/tasks', 'POST', {
-        contact_ids: selectedIds,
-        subject,
-        content
-    });
-    
-    if (result.success) {
-        showAlert('发送任务已创建，请到"任务"页面查看进度', 'success');
-        setTimeout(() => window.location.href = '/tasks', 2000);
-    } else {
-        showAlert('创建任务失败: ' + result.error, 'danger');
+
+    const modeText = sendSeparately ? '分别发送' : '群发';
+    if (!confirm(`确定要以「${modeText}」方式发送邮件给 ${selectedIds.length} 个收件人吗？`)) return;
+
+    const formData = new FormData();
+    formData.append('contact_ids', selectedIds.join(','));
+    formData.append('subject', subject);
+    formData.append('content', content);
+    formData.append('send_separately', sendSeparately);
+
+    for (let i = 0; i < fileInput.files.length; i++) {
+        formData.append('attachments', fileInput.files[i]);
+    }
+
+    showLoading();
+    try {
+        const response = await fetch('/api/tasks', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        hideLoading();
+
+        if (result.success) {
+            showAlert('发送任务已创建，请到"任务"页面查看进度', 'success');
+            setTimeout(() => window.location.href = '/tasks', 2000);
+        } else {
+            showAlert('创建任务失败: ' + result.error, 'danger');
+        }
+    } catch (error) {
+        hideLoading();
+        showAlert('请求失败: ' + error.message, 'danger');
     }
 }
 

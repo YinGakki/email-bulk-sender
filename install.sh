@@ -43,21 +43,13 @@ pip install -r requirements.txt
 if [ ! -f .env ]; then
     echo ""
     echo "=========================================="
-    echo "请配置邮箱信息"
+    echo "基础配置"
     echo "=========================================="
     echo ""
     cp .env.example .env
-    
-    read -p "请输入 QQ 邮箱地址：" email
-    read -s -p "请输入 SMTP 授权码：" password
-    echo ""
-    read -p "请输入发件人显示名称：" sender_name
+
     read -s -p "请输入页面访问密码（留空则不启用密码保护）：" access_password
     echo ""
-
-    sed -i "s|your_qq@qq.com|$email|" .env
-    sed -i "s|your_authorization_code|$password|" .env
-    sed -i "s|发件人名称|$sender_name|" .env
 
     if [ -n "$access_password" ]; then
         sed -i "s|your-access-password|$access_password|" .env
@@ -68,9 +60,9 @@ if [ ! -f .env ]; then
     # 生成随机密钥
     secret_key=$(python3 -c "import secrets; print(secrets.token_hex(24))")
     sed -i "s|your-secret-key-change-this|$secret_key|" .env
-    
+
     echo ""
-    echo "配置已保存到 .env 文件"
+    echo "基础配置已保存到 .env 文件"
 fi
 
 # 设置启动脚本权限
@@ -83,6 +75,8 @@ echo "=========================================="
 echo ""
 echo "启动命令："
 echo "  ./start.sh"
+echo ""
+echo "启动后，请进入「设置」页面配置邮箱 SMTP 信息。"
 echo ""
 echo "或使用 systemd 服务："
 echo "  sudo cp email-sender.service /etc/systemd/system/"

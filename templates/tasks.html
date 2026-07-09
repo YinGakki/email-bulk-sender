@@ -149,17 +149,23 @@ function getStatusText(status) {
 
 async function showDetail(id) {
     const result = await api(`/api/tasks/${id}`);
-    
+
     document.getElementById('detail-title').textContent = result.task.name;
+    const sendMode = result.task.send_separately ? '分别发送' : '群发';
+    const attachmentsHtml = result.attachments && result.attachments.length > 0
+        ? `<p><strong>附件：</strong>${result.attachments.map(a => `📎 ${a.filename}`).join('、')}</p>`
+        : '';
     document.getElementById('task-summary').innerHTML = `
         <p><strong>主题：</strong>${result.task.subject}</p>
+        <p><strong>发送方式：</strong>${sendMode}</p>
         <p><strong>状态：</strong><span class="status-badge status-${result.task.status}">${getStatusText(result.task.status)}</span></p>
         <p><strong>发送数：</strong>${result.task.sent_count}/${result.task.total_count}</p>
         <p><strong>成功/失败：</strong><span style="color: #27ae60;">${result.task.success_count}</span> / <span style="color: #e74c3c;">${result.task.fail_count}</span></p>
+        ${attachmentsHtml}
         <p><strong>开始时间：</strong>${formatDateTime(result.task.started_at)}</p>
         <p><strong>完成时间：</strong>${formatDateTime(result.task.completed_at)}</p>
     `;
-    
+
     const tbody = document.getElementById('logs-list');
     tbody.innerHTML = result.logs.map(l => `
         <tr>

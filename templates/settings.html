@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <h1>邮箱设置</h1>
+</div>
+
+<div class="card">
+    <h3 style="margin-bottom: 20px;">SMTP 配置</h3>
+    <div class="form-group">
+        <label>SMTP 服务器</label>
+        <input type="text" id="smtp-server" placeholder="如：smtp.qq.com">
+    </div>
+    <div class="form-group">
+        <label>SMTP 端口</label>
+        <input type="number" id="smtp-port" placeholder="如：587">
+    </div>
+    <div class="form-group">
+        <label>邮箱账号</label>
+        <input type="email" id="smtp-username" placeholder="如：your_qq@qq.com">
+    </div>
+    <div class="form-group">
+        <label>授权码 / 密码</label>
+        <input type="password" id="smtp-password" placeholder="输入新密码以修改，留空保持原密码">
+    </div>
+    <div class="form-group">
+        <label>发件人显示名称</label>
+        <input type="text" id="sender-name" placeholder="如：张三">
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="margin-bottom: 20px;">发送参数</h3>
+    <div class="form-group">
+        <label>每批发送数量</label>
+        <input type="number" id="batch-size" placeholder="如：10">
+        <small style="color: #999;">每发送一批后暂停一段时间，避免触发反垃圾邮件机制</small>
+    </div>
+    <div class="form-group">
+        <label>批次间隔（秒）</label>
+        <input type="number" id="send-interval" placeholder="如：5">
+        <small style="color: #999;">每批发送完成后等待的秒数</small>
+    </div>
+</div>
+
+<div class="toolbar">
+    <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
+    <button class="btn btn-success" onclick="testConfig()">测试连接</button>
+</div>
+
+<div id="config-status" style="display: none;"></div>
+
+<div class="card">
+    <h3 style="margin-bottom: 16px;">配置说明</h3>
+    <div class="alert alert-info">
+        <strong>QQ 邮箱授权码获取方法：</strong>
+        <ol style="margin-top: 10px; padding-left: 20px; line-height: 1.8;">
+            <li>登录 QQ 邮箱网页版</li>
+            <li>进入「设置」→「账户」</li>
+            <li>找到「POP3/SMTP服务」，点击「开启」</li>
+            <li>按照提示发送短信验证</li>
+            <li>获得授权码后填入上方「授权码/密码」栏</li>
+        </ol>
+    </div>
+    <div class="alert alert-info" style="margin-top: 10px;">
+        <strong>常用邮箱 SMTP 设置：</strong>
+        <table style="margin-top: 10px;">
+            <tr><th>邮箱</th><th>服务器</th><th>端口</th></tr>
+            <tr><td>QQ 邮箱</td><td>smtp.qq.com</td><td>587</td></tr>
+            <tr><td>163 邮箱</td><td>smtp.163.com</td><td>587</td></tr>
+            <tr><td>Gmail</td><td>smtp.gmail.com</td><td>587</td></tr>
+            <tr><td>Outlook</td><td>smtp.office365.com</td><td>587</td></tr>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadConfig() {
+    const config = await api('/api/email-config');
+    document.getElementById('smtp-server').value = config.smtp_server || '';
+    document.getElementById('smtp-port').value = config.smtp_port || '';
+    document.getElementById('smtp-username').value = config.smtp_username || '';
+    document.getElementById('sender-name').value = config.sender_name || '';
+    document.getElementById('batch-size').value = config.batch_size || '';
+    document.getElementById('send-interval').value = config.send_interval || '';
+}
+
+async function saveConfig() {
+    const data = {
+        smtp_server: document.getElementById('smtp-server').value.trim(),
+        smtp_port: parseInt(document.getElementById('smtp-port').value) || 587,
+        smtp_username: document.getElementById('smtp-username').value.trim(),
+        smtp_password: document.getElementById('smtp-password').value,
+        sender_name: document.getElementById('sender-name').value.trim(),
+        batch_size: parseInt(document.getElementById('batch-size').value) || 10,
+        send_interval: parseInt(document.getElementById('send-interval').value) || 5
+    };
+
+    const result = await api('/api/email-config', 'POST', data);
+    if (result.success) {
+        showAlert('配置保存成功', 'success');
+        document.getElementById('smtp-password').value = '';
+    } else {
+        showAlert('保存失败: ' + result.error, 'danger');
+    }
+}
+
+async function testConfig() {
+    const status = document.getElementById('config-status');
+    status.style.display = 'block';
+    status.className = 'alert alert-info';
+    status.textContent = '正在测试连接...';
+
+    const result = await api('/api/email-config/test', 'POST', {});
+
+    if (result.success) {
+        status.className = 'alert alert-success';
+        status.textContent = '连接成功！邮箱配置正确。';
+    } else {
+        status.className = 'alert alert-danger';
+        status.textContent = '连接失败: ' + result.error;
+    }
+}
+
+loadConfig();
+</script>
+{% endblock %}

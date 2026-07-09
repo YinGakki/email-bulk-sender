@@ -1,50 +1,73 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 from email.utils import formataddr
 import threading
 import time
 from datetime import datetime
 import re
-
-from config import Config
+import os
 
 
 class EmailSender:
     """邮件发送器"""
 
-    def __init__(self):
-        self.smtp_server = Config.SMTP_SERVER
-        self.smtp_port = Config.SMTP_PORT
-        self.smtp_username = Config.SMTP_USERNAME
-        self.smtp_password = Config.SMTP_PASSWORD
-        self.sender_name = Config.SENDER_NAME
-        self.batch_size = Config.BATCH_SIZE
-        self.send_interval = Config.SEND_INTERVAL
+    def __init__(self, config):
+        """
+        :param config: EmailConfig 模型实例
+        """
+        self.smtp_server = config.smtp_server
+        self.smtp_port = config.smtp_port
+        self.smtp_username = config.smtp_username
+        self.smtp_password = config.smtp_password
+        self.sender_name = config.sender_name
+        self.batch_size = config.batch_size
+        self.send_interval = config.send_interval
 
     def replace_variables(self, template, contact_info):
         """替换模板变量"""
         content = template
-        # 支持 {{姓名}}、{{name}} 等格式
         for key, value in contact_info.items():
-            # 支持 {{key}} 和 {{中文key}}
             pattern = r'\{\{\s*' + re.escape(key) + r'\s*\}\}'
             content = re.sub(pattern, str(value) if value else '', content)
         return content
 
-    def send_single_email(self, to_email, to_name, subject, content):
-        """发送单封邮件"""
+    def _build_msg(self, subject, content, attachments=None):
+        """构建邮件消息体"""
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = formataddr((self.sender_name, self.smtp_username))
+
+        # HTML内容
+        html_part = MIMEText(content, 'html', 'utf-8')
+        msg.attach(html_part)
+
+        # 附件
+        if attachments:
+            for att in attachments:
+                filepath = att.get('filepath')
+                filename = att.get('filename')
+                if filepath and os.path.exists(filepath):
+                    with open(filepath, 'rb') as f:
+                        part = MIMEBase('application', 'octet-stream')
+                        part.set_payload(f.read())
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        'Content-Disposition',
+                        f'attachment; filename="{filename}"'
+                    )
+                    msg.attach(part)
+
+        return msg
+
+    def send_single_email(self, to_email, to_name, subject, content, attachments=None):
+        """发送单封邮件（分别发送模式）"""
         try:
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = subject
-            msg['From'] = formataddr((self.sender_name, self.smtp_username))
+            msg = self._build_msg(subject, content, attachments)
             msg['To'] = formataddr((to_name, to_email))
 
-            # 添加HTML内容
-            html_part = MIMEText(content, 'html', 'utf-8')
-            msg.attach(html_part)
-
-            # 连接SMTP服务器并发送
             with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
                 server.starttls()
                 server.login(self.smtp_username, self.smtp_password)
@@ -54,27 +77,69 @@ class EmailSender:
         except Exception as e:
             return False, str(e)
 
-    def send_batch_emails(self, contacts, subject, content_template, 
+    def send_group_email(self, contacts, subject, content, attachments=None):
+        """发送群发邮件（一封邮件发给所有人）"""
+        try:
+            msg = self._build_msg(subject, content, attachments)
+            to_addrs = []
+            to_header = []
+            for c in contacts:
+                to_addrs.append(c['email'])
+                to_header.append(formataddr((c.get('name', ''), c['email'])))
+            msg['To'] = ', '.join(to_header)
+            # 添加 Bcc 确保每个收件人只看到发件人和自己
+            msg['Bcc'] = ', '.join(to_addrs)
+
+            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.smtp_username, self.smtp_password)
+                server.sendmail(self.smtp_username, to_addrs, msg.as_string())
+
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def send_batch_emails(self, contacts, subject, content_template,
+                          send_separately=True, attachments=None,
                           progress_callback=None, cancel_event=None):
         """
         批量发送邮件
-        :param contacts: 联系人列表 [{'id': 1, 'name': '张三', 'email': 'xxx@xx.com', 'company': '公司', ...}, ...]
+        :param contacts: 联系人列表
         :param subject: 邮件主题
         :param content_template: 邮件内容模板
-        :param progress_callback: 进度回调函数 callback(contact_id, email, status, error_msg)
-        :param cancel_event: 取消事件 threading.Event
+        :param send_separately: True=分别发送，False=群发
+        :param attachments: 附件列表 [{'filepath': '...', 'filename': '...'}, ...]
+        :param progress_callback: 进度回调函数
+        :param cancel_event: 取消事件
         :return: (成功数, 失败数)
         """
         success_count = 0
         fail_count = 0
         total = len(contacts)
 
+        # 群发模式：一封邮件发给所有人
+        if not send_separately:
+            if cancel_event and cancel_event.is_set():
+                return 0, total
+
+            success, error = self.send_group_email(contacts, subject, content_template, attachments)
+            if success:
+                success_count = total
+                for c in contacts:
+                    if progress_callback:
+                        progress_callback(c['id'], c['email'], 'success', None)
+            else:
+                fail_count = total
+                for c in contacts:
+                    if progress_callback:
+                        progress_callback(c['id'], c['email'], 'failed', error)
+            return success_count, fail_count
+
+        # 分别发送模式
         for i, contact in enumerate(contacts):
-            # 检查是否取消
             if cancel_event and cancel_event.is_set():
                 break
 
-            # 替换变量
             contact_info = {
                 '姓名': contact.get('name', ''),
                 'name': contact.get('name', ''),
@@ -91,12 +156,12 @@ class EmailSender:
             personalized_subject = self.replace_variables(subject, contact_info)
             personalized_content = self.replace_variables(content_template, contact_info)
 
-            # 发送邮件
             success, error = self.send_single_email(
                 contact['email'],
                 contact.get('name', ''),
                 personalized_subject,
-                personalized_content
+                personalized_content,
+                attachments
             )
 
             if success:
@@ -114,7 +179,6 @@ class EmailSender:
                     break
                 time.sleep(self.send_interval)
             else:
-                # 每封邮件间隔1-2秒，避免被判定为垃圾邮件
                 time.sleep(1.5)
 
         return success_count, fail_count
@@ -123,7 +187,8 @@ class EmailSender:
 class EmailSenderThread(threading.Thread):
     """邮件发送线程"""
 
-    def __init__(self, sender, contacts, subject, content, task_id, app, cancel_event):
+    def __init__(self, sender, contacts, subject, content, task_id, app,
+                 send_separately=True, attachments=None, cancel_event=None):
         super().__init__()
         self.sender = sender
         self.contacts = contacts
@@ -131,6 +196,8 @@ class EmailSenderThread(threading.Thread):
         self.content = content
         self.task_id = task_id
         self.app = app
+        self.send_separately = send_separately
+        self.attachments = attachments
         self.cancel_event = cancel_event
 
     def run(self):
@@ -157,7 +224,7 @@ class EmailSenderThread(threading.Thread):
                     sent_at=datetime.utcnow()
                 )
                 db.session.add(log)
-                
+
                 task.sent_count += 1
                 if status == 'success':
                     task.success_count += 1
@@ -169,26 +236,36 @@ class EmailSenderThread(threading.Thread):
                 self.contacts,
                 self.subject,
                 self.content,
-                progress_callback,
-                self.cancel_event
+                send_separately=self.send_separately,
+                attachments=self.attachments,
+                progress_callback=progress_callback,
+                cancel_event=self.cancel_event
             )
 
-            # 更新任务状态
             task.status = 'cancelled' if self.cancel_event.is_set() else 'completed'
             task.completed_at = datetime.utcnow()
             db.session.commit()
 
 
 # 全局发送任务管理
-send_tasks = {}  # {task_id: {'thread': Thread, 'cancel_event': Event}}
+send_tasks = {}
 
 
-def start_send_task(task_id, contacts, subject, content, app):
+def start_send_task(task_id, contacts, subject, content, app,
+                    send_separately=True, attachments=None):
     """启动发送任务"""
+    from models import EmailConfig
+    with app.app_context():
+        config = EmailConfig.get_config()
+
     cancel_event = threading.Event()
-    sender = EmailSender()
-    thread = EmailSenderThread(sender, contacts, subject, content, task_id, app, cancel_event)
-    
+    sender = EmailSender(config)
+    thread = EmailSenderThread(
+        sender, contacts, subject, content, task_id, app,
+        send_separately=send_separately, attachments=attachments,
+        cancel_event=cancel_event
+    )
+
     send_tasks[task_id] = {
         'thread': thread,
         'cancel_event': cancel_event

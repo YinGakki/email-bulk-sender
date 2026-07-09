@@ -61,6 +61,7 @@ class SendTask(db.Model):
     sent_count = db.Column(db.Integer, default=0)
     success_count = db.Column(db.Integer, default=0)
     fail_count = db.Column(db.Integer, default=0)
+    send_separately = db.Column(db.Boolean, default=True)  # 分别发送
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     started_at = db.Column(db.DateTime)
     completed_at = db.Column(db.DateTime)
@@ -76,6 +77,7 @@ class SendTask(db.Model):
             'sent_count': self.sent_count,
             'success_count': self.success_count,
             'fail_count': self.fail_count,
+            'send_separately': self.send_separately,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else '',
             'started_at': self.started_at.strftime('%Y-%m-%d %H:%M:%S') if self.started_at else '',
             'completed_at': self.completed_at.strftime('%Y-%m-%d %H:%M:%S') if self.completed_at else ''
@@ -106,4 +108,63 @@ class SendLog(db.Model):
             'status': self.status,
             'error_message': self.error_message or '',
             'sent_at': self.sent_at.strftime('%Y-%m-%d %H:%M:%S') if self.sent_at else ''
+        }
+
+
+class EmailConfig(db.Model):
+    """邮箱配置模型（单条记录）"""
+    id = db.Column(db.Integer, primary_key=True)
+    smtp_server = db.Column(db.String(200), default='smtp.qq.com')
+    smtp_port = db.Column(db.Integer, default=587)
+    smtp_username = db.Column(db.String(200), default='')
+    smtp_password = db.Column(db.String(500), default='')
+    sender_name = db.Column(db.String(200), default='')
+    batch_size = db.Column(db.Integer, default=10)
+    send_interval = db.Column(db.Integer, default=5)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @staticmethod
+    def get_config():
+        """获取或创建默认配置"""
+        config = EmailConfig.query.first()
+        if not config:
+            config = EmailConfig()
+            db.session.add(config)
+            db.session.commit()
+        return config
+
+    def to_dict(self, hide_password=True):
+        result = {
+            'id': self.id,
+            'smtp_server': self.smtp_server,
+            'smtp_port': self.smtp_port,
+            'smtp_username': self.smtp_username,
+            'sender_name': self.sender_name,
+            'batch_size': self.batch_size,
+            'send_interval': self.send_interval,
+            'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else ''
+        }
+        if not hide_password:
+            result['smtp_password'] = self.smtp_password
+        return result
+
+
+class Attachment(db.Model):
+    """附件模型"""
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('send_task.id'), nullable=False)
+    filename = db.Column(db.String(500), nullable=False)
+    filepath = db.Column(db.String(1000), nullable=False)
+    file_size = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    task = db.relationship('SendTask', backref=db.backref('attachments', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'filename': self.filename,
+            'file_size': self.file_size,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else ''
         }

@@ -79,16 +79,7 @@
 </div>
 
 <div class="config-warning" id="config-warning" style="display: none;">
-    <strong>提示：</strong>SMTP邮箱尚未配置，请先修改 <code>.env</code> 文件配置邮箱授权码，否则无法发送邮件。
-    <br><br>
-    <strong>QQ邮箱授权码获取方法：</strong>
-    <ol style="margin-top: 10px; padding-left: 20px;">
-        <li>登录QQ邮箱网页版</li>
-        <li>进入"设置" → "账户"</li>
-        <li>找到"POP3/SMTP服务"，点击"开启"</li>
-        <li>按照提示发送短信验证</li>
-        <li>获得授权码后填入 <code>.env</code> 文件的 <code>SMTP_PASSWORD</code></li>
-    </ol>
+    <strong>提示：</strong>SMTP 邮箱尚未配置，请前往 <a href="/settings" style="color: #856404; text-decoration: underline;">设置页面</a> 配置邮箱信息，否则无法发送邮件。
 </div>
 {% endblock %}
 

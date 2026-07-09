@@ -3,10 +3,11 @@ import functools
 import pandas as pd
 import io
 import os
+import uuid
 from datetime import datetime
 
 from config import Config
-from models import db, Contact, EmailTemplate, SendTask, SendLog
+from models import db, Contact, EmailTemplate, SendTask, SendLog, EmailConfig, Attachment
 from email_sender import start_send_task, cancel_send_task
 
 app = Flask(__name__)
@@ -15,9 +16,32 @@ app.config.from_object(Config)
 # 初始化数据库
 db.init_app(app)
 
-# 创建数据库表
-with app.app_context():
-    db.create_all()
+# 创建上传目录
+os.makedirs(os.path.join(Config.UPLOAD_FOLDER, 'attachments'), exist_ok=True)
+
+
+# ========== 数据库初始化（从 .env 导入默认配置）==========
+
+def init_email_config():
+    """首次运行时从 .env 导入默认邮箱配置"""
+    with app.app_context():
+        db.create_all()
+        config = EmailConfig.query.first()
+        if not config:
+            config = EmailConfig(
+                smtp_server=Config.SMTP_SERVER,
+                smtp_port=Config.SMTP_PORT,
+                smtp_username=Config.SMTP_USERNAME,
+                smtp_password=Config.SMTP_PASSWORD,
+                sender_name=Config.SENDER_NAME,
+                batch_size=Config.BATCH_SIZE,
+                send_interval=Config.SEND_INTERVAL
+            )
+            db.session.add(config)
+            db.session.commit()
+
+
+init_email_config()
 
 
 # ========== 登录认证 ==========
@@ -26,13 +50,10 @@ def require_login(func):
     """登录认证装饰器"""
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # 未设置密码则跳过认证
         if not Config.ACCESS_PASSWORD:
             return func(*args, **kwargs)
-        # 已登录则放行
         if session.get('logged_in'):
             return func(*args, **kwargs)
-        # 未登录跳转到登录页
         return redirect(url_for('login_page'))
     return wrapper
 
@@ -40,7 +61,6 @@ def require_login(func):
 @app.route('/login', methods=['GET', 'POST'])
 def login_page():
     """登录页面"""
-    # 未设置密码则直接放行
     if not Config.ACCESS_PASSWORD:
         session['logged_in'] = True
         return redirect(url_for('index'))
@@ -99,16 +119,21 @@ def compose_page():
     return render_template('compose.html')
 
 
-# ========== API 认证（统一处理） ==========
+@app.route('/settings')
+@require_login
+def settings_page():
+    """邮箱设置页面"""
+    return render_template('settings.html')
+
+
+# ========== API 认证 ==========
 
 @app.before_request
 def check_api_auth():
     """API 请求认证检查"""
-    # 跳过不需要认证的路径
     exempt_paths = ['/login', '/logout']
     if request.path in exempt_paths:
         return None
-    # 只检查 API 路由
     if request.path.startswith('/api/'):
         if not Config.ACCESS_PASSWORD:
             return None
@@ -120,7 +145,6 @@ def check_api_auth():
 # ========== 联系人 API ==========
 
 @app.route('/api/contacts', methods=['GET'])
-@require_login
 def get_contacts():
     """获取联系人列表"""
     contacts = Contact.query.order_by(Contact.created_at.desc()).all()
@@ -154,7 +178,7 @@ def update_contact(id):
     contact = Contact.query.get(id)
     if not contact:
         return jsonify({'success': False, 'error': '联系人不存在'}), 404
-    
+
     data = request.get_json()
     contact.name = data.get('name', contact.name)
     contact.email = data.get('email', contact.email)
@@ -162,7 +186,7 @@ def update_contact(id):
     contact.phone = data.get('phone', contact.phone)
     contact.tags = data.get('tags', contact.tags)
     contact.notes = data.get('notes', contact.notes)
-    
+
     try:
         db.session.commit()
         return jsonify({'success': True, 'contact': contact.to_dict()})
@@ -177,7 +201,7 @@ def delete_contact(id):
     contact = Contact.query.get(id)
     if not contact:
         return jsonify({'success': False, 'error': '联系人不存在'}), 404
-    
+
     try:
         db.session.delete(contact)
         db.session.commit()
@@ -192,21 +216,19 @@ def import_contacts():
     """从CSV导入联系人"""
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': '请上传文件'}), 400
-    
+
     file = request.files['file']
     if not file.filename:
         return jsonify({'success': False, 'error': '文件名无效'}), 400
-    
+
     try:
-        # 读取CSV或Excel
         if file.filename.endswith('.csv'):
             df = pd.read_csv(io.StringIO(file.stream.read().decode('utf-8')))
         elif file.filename.endswith('.xlsx') or file.filename.endswith('.xls'):
             df = pd.read_excel(file.stream)
         else:
             return jsonify({'success': False, 'error': '只支持CSV和Excel文件'}), 400
-        
-        # 标准化列名
+
         column_mapping = {
             '姓名': 'name', 'name': 'name', 'Name': 'name',
             '邮箱': 'email', 'email': 'email', 'Email': 'email',
@@ -215,30 +237,27 @@ def import_contacts():
             '标签': 'tags', 'tags': 'tags', 'Tags': 'tags',
             '备注': 'notes', 'notes': 'notes', 'Notes': 'notes'
         }
-        
+
         df.columns = [column_mapping.get(col.lower(), col.lower()) for col in df.columns]
-        
-        # 检查必需列
+
         if 'name' not in df.columns or 'email' not in df.columns:
             return jsonify({'success': False, 'error': '文件必须包含"姓名"和"邮箱"列'}), 400
-        
-        # 导入数据
+
         imported = 0
         skipped = 0
         for _, row in df.iterrows():
             email = str(row['email']).strip()
             name = str(row['name']).strip()
-            
+
             if not email or not name:
                 skipped += 1
                 continue
-            
-            # 检查是否已存在
+
             existing = Contact.query.filter_by(email=email).first()
             if existing:
                 skipped += 1
                 continue
-            
+
             contact = Contact(
                 name=name,
                 email=email,
@@ -249,10 +268,10 @@ def import_contacts():
             )
             db.session.add(contact)
             imported += 1
-        
+
         db.session.commit()
         return jsonify({'success': True, 'imported': imported, 'skipped': skipped})
-    
+
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -262,7 +281,7 @@ def import_contacts():
 def export_contacts():
     """导出联系人为CSV"""
     contacts = Contact.query.order_by(Contact.created_at.desc()).all()
-    
+
     data = [{
         '姓名': c.name,
         '邮箱': c.email,
@@ -271,11 +290,11 @@ def export_contacts():
         '标签': c.tags,
         '备注': c.notes
     } for c in contacts]
-    
+
     df = pd.DataFrame(data)
     output = io.StringIO()
     df.to_csv(output, index=False, encoding='utf-8-sig')
-    
+
     return output.getvalue(), 200, {
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': 'attachment; filename=contacts.csv'
@@ -315,12 +334,12 @@ def update_template(id):
     template = EmailTemplate.query.get(id)
     if not template:
         return jsonify({'success': False, 'error': '模板不存在'}), 404
-    
+
     data = request.get_json()
     template.name = data.get('name', template.name)
     template.subject = data.get('subject', template.subject)
     template.content = data.get('content', template.content)
-    
+
     try:
         db.session.commit()
         return jsonify({'success': True, 'template': template.to_dict()})
@@ -335,7 +354,7 @@ def delete_template(id):
     template = EmailTemplate.query.get(id)
     if not template:
         return jsonify({'success': False, 'error': '模板不存在'}), 404
-    
+
     try:
         db.session.delete(template)
         db.session.commit()
@@ -360,44 +379,76 @@ def get_task(id):
     task = SendTask.query.get(id)
     if not task:
         return jsonify({'success': False, 'error': '任务不存在'}), 404
-    
+
     logs = SendLog.query.filter_by(task_id=id).order_by(SendLog.sent_at.desc()).all()
+    attachments = Attachment.query.filter_by(task_id=id).all()
     return jsonify({
         'task': task.to_dict(),
-        'logs': [l.to_dict() for l in logs]
+        'logs': [l.to_dict() for l in logs],
+        'attachments': [a.to_dict() for a in attachments]
     })
 
 
 @app.route('/api/tasks', methods=['POST'])
 def create_task():
-    """创建发送任务"""
-    data = request.get_json()
-    
-    # 获取选中的联系人
-    contact_ids = data.get('contact_ids', [])
-    if not contact_ids:
+    """创建发送任务（支持附件上传）"""
+    # 解析表单数据
+    contact_ids_str = request.form.get('contact_ids', '')
+    subject = request.form.get('subject', '')
+    content = request.form.get('content', '')
+    send_separately = request.form.get('send_separately', 'true').lower() == 'true'
+
+    if not contact_ids_str:
         return jsonify({'success': False, 'error': '请选择收件人'}), 400
-    
+
+    try:
+        contact_ids = [int(x.strip()) for x in contact_ids_str.split(',') if x.strip()]
+    except ValueError:
+        return jsonify({'success': False, 'error': '收件人ID格式错误'}), 400
+
     contacts = Contact.query.filter(Contact.id.in_(contact_ids)).all()
     if not contacts:
         return jsonify({'success': False, 'error': '联系人不存在'}), 400
-    
+
     contacts_data = [c.to_dict() for c in contacts]
-    
+
     # 创建任务
     task = SendTask(
-        name=data.get('name', f'发送任务-{datetime.now().strftime("%Y%m%d%H%M%S")}'),
-        subject=data.get('subject'),
-        content=data.get('content'),
+        name=request.form.get('name', f'发送任务-{datetime.now().strftime("%Y%m%d%H%M%S")}'),
+        subject=subject,
+        content=content,
         status='pending',
-        total_count=len(contacts)
+        total_count=len(contacts),
+        send_separately=send_separately
     )
     db.session.add(task)
     db.session.commit()
-    
+
+    # 处理附件上传
+    attachments = []
+    uploaded_files = request.files.getlist('attachments')
+    for file in uploaded_files:
+        if file and file.filename:
+            ext = os.path.splitext(file.filename)[1]
+            unique_name = f"{uuid.uuid4().hex}{ext}"
+            filepath = os.path.join(Config.UPLOAD_FOLDER, 'attachments', unique_name)
+            file.save(filepath)
+
+            att = Attachment(
+                task_id=task.id,
+                filename=file.filename,
+                filepath=filepath,
+                file_size=os.path.getsize(filepath)
+            )
+            db.session.add(att)
+            attachments.append({'filepath': filepath, 'filename': file.filename})
+
+    db.session.commit()
+
     # 启动发送
-    start_send_task(task.id, contacts_data, task.subject, task.content, app)
-    
+    start_send_task(task.id, contacts_data, task.subject, task.content, app,
+                    send_separately=send_separately, attachments=attachments)
+
     return jsonify({'success': True, 'task_id': task.id})
 
 
@@ -407,27 +458,78 @@ def cancel_task(id):
     task = SendTask.query.get(id)
     if not task:
         return jsonify({'success': False, 'error': '任务不存在'}), 404
-    
+
     if task.status != 'sending':
         return jsonify({'success': False, 'error': '任务不在发送状态'}), 400
-    
+
     cancel_send_task(id)
     return jsonify({'success': True})
 
 
-# ========== 配置 API ==========
+# ========== 邮箱配置 API ==========
+
+@app.route('/api/email-config', methods=['GET'])
+def get_email_config():
+    """获取邮箱配置"""
+    config = EmailConfig.get_config()
+    return jsonify(config.to_dict(hide_password=True))
+
+
+@app.route('/api/email-config', methods=['POST'])
+def update_email_config():
+    """更新邮箱配置"""
+    data = request.get_json()
+    config = EmailConfig.get_config()
+
+    config.smtp_server = data.get('smtp_server', config.smtp_server)
+    config.smtp_port = int(data.get('smtp_port', config.smtp_port))
+    config.smtp_username = data.get('smtp_username', config.smtp_username)
+    if data.get('smtp_password'):
+        config.smtp_password = data.get('smtp_password')
+    config.sender_name = data.get('sender_name', config.sender_name)
+    config.batch_size = int(data.get('batch_size', config.batch_size))
+    config.send_interval = int(data.get('send_interval', config.send_interval))
+
+    try:
+        db.session.commit()
+        return jsonify({'success': True, 'config': config.to_dict(hide_password=True)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/email-config/test', methods=['POST'])
+def test_email_config():
+    """测试邮箱配置"""
+    import smtplib
+    config = EmailConfig.get_config()
+
+    if not config.smtp_username or not config.smtp_password:
+        return jsonify({'success': False, 'error': '邮箱账号或密码未配置'}), 400
+
+    try:
+        with smtplib.SMTP(config.smtp_server, config.smtp_port) as server:
+            server.starttls()
+            server.login(config.smtp_username, config.smtp_password)
+        return jsonify({'success': True, 'message': '连接成功'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+# ========== 配置 API（兼容旧版）==========
 
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """获取当前SMTP配置"""
+    config = EmailConfig.get_config()
     return jsonify({
-        'smtp_server': Config.SMTP_SERVER,
-        'smtp_port': Config.SMTP_PORT,
-        'smtp_username': Config.SMTP_USERNAME,
-        'sender_name': Config.SENDER_NAME,
-        'batch_size': Config.BATCH_SIZE,
-        'send_interval': Config.SEND_INTERVAL,
-        'configured': bool(Config.SMTP_USERNAME and Config.SMTP_PASSWORD)
+        'smtp_server': config.smtp_server,
+        'smtp_port': config.smtp_port,
+        'smtp_username': config.smtp_username,
+        'sender_name': config.sender_name,
+        'batch_size': config.batch_size,
+        'send_interval': config.send_interval,
+        'configured': bool(config.smtp_username and config.smtp_password)
     })
 
 
