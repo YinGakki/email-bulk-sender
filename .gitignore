@@ -32,4 +32,4 @@ __pycache__/
 Thumbs.db
 
 # 上传文件
-uploads/
+uploads/nginx.conf
