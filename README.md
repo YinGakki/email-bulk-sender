@@ -73,6 +73,7 @@ SMTP_USERNAME=your_qq@qq.com
 SMTP_PASSWORD=你的授权码
 SENDER_NAME=你的名称
 SECRET_KEY=随机密钥
+ACCESS_PASSWORD=页面访问密码
 ```
 
 **获取 QQ 邮箱授权码：**
@@ -167,6 +168,18 @@ email-bulk-sender/
     ├── compose.html
     └── tasks.html
 ```
+
+## 密码保护
+
+在 `.env` 中设置 `ACCESS_PASSWORD` 即可启用页面密码保护：
+
+```
+ACCESS_PASSWORD=your-password
+```
+
+- 设置后所有页面和 API 都需要先输入密码才能访问
+- 留空则不启用密码保护
+- `./install.sh` 安装时会交互式提示设置
 
 ## 注意事项
 

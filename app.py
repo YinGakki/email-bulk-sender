@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+import functools
 import pandas as pd
 import io
 import os
@@ -19,41 +20,107 @@ with app.app_context():
     db.create_all()
 
 
+# ========== 登录认证 ==========
+
+def require_login(func):
+    """登录认证装饰器"""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # 未设置密码则跳过认证
+        if not Config.ACCESS_PASSWORD:
+            return func(*args, **kwargs)
+        # 已登录则放行
+        if session.get('logged_in'):
+            return func(*args, **kwargs)
+        # 未登录跳转到登录页
+        return redirect(url_for('login_page'))
+    return wrapper
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login_page():
+    """登录页面"""
+    # 未设置密码则直接放行
+    if not Config.ACCESS_PASSWORD:
+        session['logged_in'] = True
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        if password == Config.ACCESS_PASSWORD:
+            session['logged_in'] = True
+            return redirect(url_for('index'))
+        return render_template('login.html', error='密码错误')
+
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    """退出登录"""
+    session.pop('logged_in', None)
+    return redirect(url_for('login_page'))
+
+
 # ========== 页面路由 ==========
 
 @app.route('/')
+@require_login
 def index():
     """首页"""
     return render_template('index.html')
 
 
 @app.route('/contacts')
+@require_login
 def contacts_page():
     """联系人管理页面"""
     return render_template('contacts.html')
 
 
 @app.route('/templates')
+@require_login
 def templates_page():
     """邮件模板页面"""
     return render_template('templates.html')
 
 
 @app.route('/tasks')
+@require_login
 def tasks_page():
     """发送任务页面"""
     return render_template('tasks.html')
 
 
 @app.route('/compose')
+@require_login
 def compose_page():
     """撰写邮件页面"""
     return render_template('compose.html')
 
 
+# ========== API 认证（统一处理） ==========
+
+@app.before_request
+def check_api_auth():
+    """API 请求认证检查"""
+    # 跳过不需要认证的路径
+    exempt_paths = ['/login', '/logout']
+    if request.path in exempt_paths:
+        return None
+    # 只检查 API 路由
+    if request.path.startswith('/api/'):
+        if not Config.ACCESS_PASSWORD:
+            return None
+        if not session.get('logged_in'):
+            return jsonify({'success': False, 'error': '未登录'}), 401
+    return None
+
+
 # ========== 联系人 API ==========
 
 @app.route('/api/contacts', methods=['GET'])
+@require_login
 def get_contacts():
     """获取联系人列表"""
     contacts = Contact.query.order_by(Contact.created_at.desc()).all()

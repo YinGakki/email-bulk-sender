@@ -49,13 +49,22 @@ if [ ! -f .env ]; then
     cp .env.example .env
     
     read -p "请输入 QQ 邮箱地址：" email
-    read -p "请输入 SMTP 授权码：" password
+    read -s -p "请输入 SMTP 授权码：" password
+    echo ""
     read -p "请输入发件人显示名称：" sender_name
-    
+    read -s -p "请输入页面访问密码（留空则不启用密码保护）：" access_password
+    echo ""
+
     sed -i "s|your_qq@qq.com|$email|" .env
     sed -i "s|your_authorization_code|$password|" .env
     sed -i "s|发件人名称|$sender_name|" .env
-    
+
+    if [ -n "$access_password" ]; then
+        sed -i "s|your-access-password|$access_password|" .env
+    else
+        sed -i "s|your-access-password||" .env
+    fi
+
     # 生成随机密钥
     secret_key=$(python3 -c "import secrets; print(secrets.token_hex(24))")
     sed -i "s|your-secret-key-change-this|$secret_key|" .env

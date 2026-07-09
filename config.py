@@ -21,3 +21,6 @@ class Config:
     # 发送配置
     BATCH_SIZE = int(os.environ.get('BATCH_SIZE', 10))  # 每批发送数量
     SEND_INTERVAL = int(os.environ.get('SEND_INTERVAL', 5))  # 批次间隔秒数
+
+    # 访问密码（为空则不启用密码保护）
+    ACCESS_PASSWORD = os.environ.get('ACCESS_PASSWORD', '')
